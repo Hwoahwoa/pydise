@@ -204,6 +204,22 @@ class PyDise(object):
         return self.side_effects
 
 
+def _get_filenames(args):
+    """Return a list of files based on args or by default, from the current directory."""
+    list_files = list()
+    if os.path.isdir(args.filename):
+        for root, sub_directories, files in os.walk(args.filename):
+            for filename in files:
+                if str(filename).endswith(".py"):
+                    list_files.append(os.path.join(root, filename))
+    elif os.path.isfile(args.filename) and str(args.filename).endswith(".py"):
+        list_files.append(args.filename)
+    else:
+        for file in glob(os.path.join(os.path.curdir, f"{args.filename}*.py")):
+            list_files.append(file)
+    return list_files
+
+
 def main(filename, on_error="logger"):
     """Script main entry point."""
     pydise_object = PyDise(filename=filename, on_error=on_error)
@@ -218,17 +234,24 @@ def run():
     """Run."""
     parser = argparse.ArgumentParser()
     # parser.add_argument("--filename", help="file to check")
-    parser.add_argument("filename", help="file to check", type=str)
+    parser.add_argument(
+        "filename", help="file to check", type=str, nargs="?", default="."
+    )
+    parser.add_argument(
+        "--list-only", help="list the detected files.", action="store_true"
+    )
     args = parser.parse_args()
-    full_path = os.path.dirname(os.path.abspath(args.filename))
-    list_files = [
-        y for x in os.walk(full_path) for y in glob(os.path.join(x[0], "*.py"))
-    ]
-    for path in list_files:
-        print(path)
-        main(filename=path)
 
-    # main(filename="audit_fortinet_ha_group_name.py")
+    list_files = _get_filenames(args)
+
+    if args.list_only:
+        print("Detected files : ")
+        for file in list_files:
+            print(f"* {file}")
+        exit(0)
+
+    for path in list_files:
+        main(filename=path)
 
 
 if __name__ == "__main__":
