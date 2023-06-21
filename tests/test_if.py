@@ -3,7 +3,6 @@ import ast
 import pytest
 import itertools
 import pydise.detector
-from pydise.exceptions import PydiseSideEffects
 import jinja2
 
 template_condition_simple = jinja2.Template("""
@@ -62,7 +61,7 @@ def test_if_ko(condition_ko):
 
     test_parse = StringIO(code_test)
 
-    with pytest.raises(PydiseSideEffects) as exc_info:
+    with pytest.raises(pydise.detector.PydiseSideEffects) as exc_info:
         pydise_object = pydise.detector.PyDise(file=test_parse)
         pydise_object.analyze()
         pydise_object.notify(on_error="raise")
