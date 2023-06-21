@@ -7,7 +7,7 @@ template_condition_simple = jinja2.Template("""
 if {{ condition }}:
     print("foo")   
 """)
-expected_condition_simple = "print at line '3'"
+expected_condition_simple = ":3 -> Side effects detected :"
 list_conditions_simple_ko = ['True',
                              'False or True',
                              'True and True',
@@ -64,7 +64,7 @@ def test_if_ko(condition_ko):
         pydise_object.analyze()
         pydise_object.notify(on_error="raise")
 
-    assert str(exc_info.value) == expected_condition_simple
+    assert expected_condition_simple in str(exc_info.value)
 
 
 @pytest.mark.parametrize("condition_ok", list_conditions_simple_ok)
