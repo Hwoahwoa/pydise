@@ -3,11 +3,22 @@ import argparse
 import ast
 import os
 import logging
-from pydise.exceptions import PydiseSideEffects
+import linecache
+from glob import glob
 
-PATTERN_SIDE_EFFECTS = (ast.Expr, ast.Raise, ast.Assert)
+PATTERNS_SIDE_EFFECTS = (ast.Expr, ast.Raise, ast.Assert)
+PATTERNS_IGNORED = ("# no-pydise", "# no_pydise", "PolkaSetup")
 dict_assign = dict()
 dict_functions = dict()
+
+
+class PydiseSideEffects(Exception):
+    """Pydise Exception."""
+
+    def __init__(self, message=""):
+        """Init exception message."""
+        self.message = message
+        super().__init__(self.message)
 
 
 class RewriteName(ast.NodeTransformer):
@@ -73,10 +84,14 @@ class PyDise(object):
 
     def _notify(self, tree_element, level=logging.ERROR, on_error=None):
         """Notifying assertion."""
+        message = f"{self.filename}:{tree_element.lineno} -> Side effects detected : "
         try:
-            message = f"{tree_element.value.__dict__.get('func').id} at line '{tree_element.lineno}'"
+            message += f"{tree_element.value.__dict__.get('func').id}"
         except Exception:
-            message = f"Notif -> {tree_element}"
+            try:
+                message += f"{list(ast.iter_child_nodes(tree_element))}"
+            except Exception:
+                message += f"{tree_element}"
 
         if on_error == "logger":
             logging.log(level, message)
@@ -115,11 +130,18 @@ class PyDise(object):
 
     def is_side_effects(self, node):
         """Check if the ast node could generate a side effect."""
-        if isinstance(node, PATTERN_SIDE_EFFECTS):
+        if isinstance(node, PATTERNS_SIDE_EFFECTS):
             # When ast.Expr(value=ast.Constant) assuming it's a docstring -> Ignored
             if hasattr(node, "value") and isinstance(node.value, ast.Constant):
                 return False
-            # print(inspect.getsourcefile())
+
+            # Exclusion based on line pattern
+            raw_line = linecache.getline(
+                self.filename, node.lineno, module_globals=None
+            )
+            for pattern_ignored in PATTERNS_IGNORED:
+                if pattern_ignored in raw_line:
+                    return False
             return True
 
     def get_side_effects(self, tree_element, recursive=False):
@@ -162,9 +184,8 @@ class PyDise(object):
             if isinstance(tree_element, ast.If):
                 # Skip test when it's a function / object
                 if isinstance(tree_element.test, ast.Call):
-                    self.side_effects["warnings"].append(
-                        f"Possible side-effect - {tree_element.lineno}"
-                    )
+                    # self.side_effects["warnings"].append(f"Possible side-effect - {tree_element.lineno}")
+                    self.side_effects["warnings"].append(tree_element.test)
                 else:
                     unparse_code = ast.unparse(tree_element.test)
                     try:
@@ -196,10 +217,18 @@ def main(filename, on_error="logger"):
 def run():
     """Run."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--filename", help="file to check")
+    # parser.add_argument("--filename", help="file to check")
+    parser.add_argument("filename", help="file to check", type=str)
     args = parser.parse_args()
+    full_path = os.path.dirname(os.path.abspath(args.filename))
+    list_files = [
+        y for x in os.walk(full_path) for y in glob(os.path.join(x[0], "*.py"))
+    ]
+    for path in list_files:
+        print(path)
+        main(filename=path)
 
-    main(filename=args.filename)
+    # main(filename="audit_fortinet_ha_group_name.py")
 
 
 if __name__ == "__main__":
