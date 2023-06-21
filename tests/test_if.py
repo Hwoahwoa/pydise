@@ -1,7 +1,5 @@
 from io import StringIO
-import ast
 import pytest
-import itertools
 import pydise.detector
 import jinja2
 
