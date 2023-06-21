@@ -1,3 +1,4 @@
+"""Pydise - Detector."""
 import argparse
 import ast
 import os
@@ -10,8 +11,10 @@ dict_functions = dict()
 
 
 class RewriteName(ast.NodeTransformer):
+    """Class for Rewrite some nodes in an AST Tree."""
 
     def visit_Name(self, node):
+        """Replace ast.Name to an ast value."""
         return dict_assign.get(node.id, node)
 
 
@@ -19,6 +22,7 @@ class PyDise(object):
     """Main class."""
 
     def __init__(self, filename=None, file=None, ast_tree=None, on_error="logger"):
+        """Init."""
         if filename:
             self.filename = filename
             self.load_from_filename(filename)
@@ -36,6 +40,7 @@ class PyDise(object):
         self.side_effects = {"warnings": list(), "errors": list()}
 
     def load_from_filename(self, filename):
+        """Load a file from a filename, and set an ast_module."""
         self.filename = filename
         if not os.path.isfile(self.filename):
             print("'{}' isn't a file.")
@@ -43,9 +48,11 @@ class PyDise(object):
             self.ast_module = ast.parse(file.read(), filename=self.filename)
 
     def load_from_file(self, file):
+        """Load a file, and set an ast_module."""
         self.ast_module = ast.parse(file.read())
 
     def load_from_ast(self, ast_tree):
+        """Load an ast module."""
         self.ast_module = ast_tree
 
     def save_variables(self, ast_assign):
@@ -58,6 +65,7 @@ class PyDise(object):
                 dict_assign[target.id] = ast_assign.value
 
     def save_functions(self, ast_function_def):
+        """Save functions to a dictionnary."""
         # TODO : Improve this method to retrieve sub function
         if not isinstance(ast_function_def, ast.FunctionDef):
             logging.error("Not an AST FunctionDef.")
@@ -67,7 +75,7 @@ class PyDise(object):
         """Notifying assertion."""
         try:
             message = f"{tree_element.value.__dict__.get('func').id} at line '{tree_element.lineno}'"
-        except Exception as e:
+        except Exception:
             message = f"Notif -> {tree_element}"
 
         if on_error == "logger":
@@ -78,6 +86,7 @@ class PyDise(object):
             pass
 
     def notify(self, on_error=None):
+        """Use to notify user."""
         if on_error is None:
             on_error = self.on_error
         side_effects_warnings = list(set(self.side_effects.get("warnings", list())))
@@ -105,6 +114,7 @@ class PyDise(object):
         return self.side_effects
 
     def is_side_effects(self, node):
+        """Check if the ast node could generate a side effect."""
         if isinstance(node, PATTERN_SIDE_EFFECTS):
             # When ast.Expr(value=ast.Constant) assuming it's a docstring -> Ignored
             if hasattr(node, "value") and isinstance(node.value, ast.Constant):
@@ -113,7 +123,7 @@ class PyDise(object):
             return True
 
     def get_side_effects(self, tree_element, recursive=False):
-
+        """Recursively dig into an ast tree and found side effects."""
         if self.is_side_effects(tree_element):
             self.side_effects["errors"].append(tree_element)
 
@@ -133,7 +143,6 @@ class PyDise(object):
                 if dict_functions.get(function_name):
                     self.get_side_effects(dict_functions.get(function_name))
         else:
-
             if isinstance(tree_element, ast.Call):
                 if hasattr(tree_element, "func") and hasattr(tree_element.func, "id"):
                     dest_call = dict_functions.get(tree_element.func.id)
@@ -153,7 +162,9 @@ class PyDise(object):
             if isinstance(tree_element, ast.If):
                 # Skip test when it's a function / object
                 if isinstance(tree_element.test, ast.Call):
-                    self.side_effects["warnings"].append(f"Possible side-effect - {tree_element.lineno}")
+                    self.side_effects["warnings"].append(
+                        f"Possible side-effect - {tree_element.lineno}"
+                    )
                 else:
                     unparse_code = ast.unparse(tree_element.test)
                     try:
@@ -174,7 +185,6 @@ class PyDise(object):
 
 def main(filename, on_error="logger"):
     """Script main entry point."""
-
     pydise_object = PyDise(filename=filename, on_error=on_error)
 
     pydise_object.analyze()
@@ -192,5 +202,5 @@ def run():
     main(filename=args.filename)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     run()
