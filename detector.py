@@ -181,7 +181,33 @@ class PyDise(object):
             if isinstance(tree_element, (ast.ClassDef, ast.Try, ast.With)):
                 self.get_side_effects(tree_element, recursive=True)
 
-            if isinstance(tree_element, ast.If):
+            if isinstance(tree_element, ast.For):
+                loop_var = ast.unparse(tree_element.target)
+                loop_iter = ast.unparse(tree_element.iter)
+
+                try:
+                    eval_code = eval(f"[True for {loop_var} in {loop_iter}]")
+                    eval_code = True if True in eval_code else False
+                except Exception:
+                    eval_code = False
+
+                if eval_code:
+                    self.get_side_effects(tree_element, recursive=True)
+                    is_break = (
+                        True
+                        if True in [isinstance(x, ast.Break) for x in tree_element.body]
+                        else False
+                    )
+
+                    if not is_break and tree_element.orelse:
+                        for sub_condition in tree_element.orelse:
+                            self.get_side_effects(sub_condition)
+                else:
+                    if tree_element.orelse:
+                        for sub_condition in tree_element.orelse:
+                            self.get_side_effects(sub_condition)
+
+            if isinstance(tree_element, (ast.If, ast.While)):
                 # Skip test when it's a function / object
                 if isinstance(tree_element.test, ast.Call):
                     # self.side_effects["warnings"].append(f"Possible side-effect - {tree_element.lineno}")
