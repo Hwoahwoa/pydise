@@ -8,6 +8,7 @@ list_ko = [
     "assert('foo')",
     "time.sleep(1)",
     "exit(0)",
+    "del x",
     "a = lambda x: print(x); a('foo')",
 ]
 

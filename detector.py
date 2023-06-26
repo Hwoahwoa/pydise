@@ -6,7 +6,8 @@ import logging
 import linecache
 from glob import glob
 
-PATTERNS_SIDE_EFFECTS = (ast.Expr, ast.Raise, ast.Assert)
+# TODO : An ast.Expr may not generate an side effect, but this is hard to distinguish.
+PATTERNS_SIDE_EFFECTS = (ast.Expr, ast.Raise, ast.Assert, ast.Delete)
 PATTERNS_IGNORED = ("# no-pydise", "# no_pydise", "PolkaSetup")
 dict_assign = dict()
 dict_functions = dict()
@@ -75,12 +76,12 @@ class PyDise(object):
             if hasattr(target, "id"):
                 dict_assign[target.id] = ast_assign.value
 
-    def save_functions(self, ast_function_def):
-        """Save functions to a dictionnary."""
+    def save_functions(self, ast_def):
+        """Save functions / class to a dictionnary."""
         # TODO : Improve this method to retrieve sub function
-        if not isinstance(ast_function_def, ast.FunctionDef):
-            logging.error("Not an AST FunctionDef.")
-        dict_functions[ast_function_def.name] = ast_function_def
+        if not isinstance(ast_def, (ast.FunctionDef, ast.ClassDef)):
+            logging.error("Not an AST FunctionDef or ClassDef.")
+        dict_functions[ast_def.name] = ast_def
 
     def _notify(self, tree_element, level=logging.ERROR, on_error=None):
         """Notifying assertion."""
@@ -121,7 +122,6 @@ class PyDise(object):
             logging.error("Not an AST Module.")
         else:
             tree_elements = ast_module.body
-            # print(tree_elements)
 
             for tree_element in tree_elements:
                 tree_element = RewriteName().visit(tree_element)
@@ -135,7 +135,7 @@ class PyDise(object):
             if hasattr(node, "value") and isinstance(node.value, ast.Constant):
                 return False
 
-            # Exclusion based on line pattern
+            # Exclusion based on a line pattern
             raw_line = linecache.getline(
                 self.filename, node.lineno, module_globals=None
             )
@@ -146,12 +146,25 @@ class PyDise(object):
 
     def get_side_effects(self, tree_element, recursive=False):
         """Recursively dig into an ast tree and found side effects."""
+        # TODO : Add "try/finally"
+        # TODO : Add "match"
+
         if self.is_side_effects(tree_element):
             self.side_effects["errors"].append(tree_element)
 
-        # Get the first level functions / variables.
-        if isinstance(tree_element, ast.FunctionDef):
+        # Save the first level functions / class.
+        if isinstance(tree_element, (ast.FunctionDef, ast.ClassDef)):
             self.save_functions(tree_element)
+
+        if isinstance(tree_element, ast.FunctionDef):
+            self.get_side_effects(tree_element.args)
+
+        if isinstance(tree_element, ast.arguments):
+            for default in tree_element.defaults:
+                self.get_side_effects(default)
+
+            for kw_default in tree_element.kw_defaults:
+                self.get_side_effects(kw_default)
 
         if recursive:
             # For several type of statement like for/while/try/if/with/raise etc...
@@ -168,7 +181,12 @@ class PyDise(object):
             if isinstance(tree_element, ast.Call):
                 if hasattr(tree_element, "func") and hasattr(tree_element.func, "id"):
                     dest_call = dict_functions.get(tree_element.func.id)
-                    self.get_side_effects(dest_call, recursive=True)
+                    if isinstance(dest_call, ast.ClassDef):
+                        for body_data in dest_call.body:
+                            if body_data.name == "__init__":
+                                self.get_side_effects(body_data, recursive=True)
+                    else:
+                        self.get_side_effects(dest_call, recursive=True)
 
             if isinstance(tree_element, ast.Assign):
                 for child in list(ast.iter_child_nodes(tree_element)):
@@ -178,7 +196,8 @@ class PyDise(object):
                 else:
                     self.save_variables(tree_element)
 
-            if isinstance(tree_element, (ast.ClassDef, ast.Try, ast.With)):
+            # if isinstance(tree_element, (ast.ClassDef, ast.Try, ast.With)):
+            if isinstance(tree_element, (ast.Try, ast.With)):
                 self.get_side_effects(tree_element, recursive=True)
 
             if isinstance(tree_element, ast.For):
