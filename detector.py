@@ -1,14 +1,16 @@
 """Pydise - Detector."""
 import argparse
 import ast
+import copy
 import os
 import logging
 import linecache
 from glob import glob
 
-# TODO : An ast.Expr may not generate an side effect, but this is hard to distinguish.
+# TODO : An ast.Expr may not generate a side effect, but it's hard to distinguish, so
+#        by default an ast.Expr will be defined as a possible side-effect generator.
 PATTERNS_SIDE_EFFECTS = (ast.Expr, ast.Raise, ast.Assert, ast.Delete)
-PATTERNS_IGNORED = ("# no-pydise", "# no_pydise", "PolkaSetup")
+PATTERNS_IGNORED = ["# no-pydise", "# no_pydise"]
 dict_assign = dict()
 dict_functions = dict()
 
@@ -30,11 +32,16 @@ class RewriteName(ast.NodeTransformer):
         return dict_assign.get(node.id, node)
 
 
-class PyDise(object):
-    """Main class."""
+class PyDiseLoader(object):
+    """Class used to define strategy to load a data and return an ast_module."""
 
-    def __init__(self, filename=None, file=None, ast_tree=None, on_error="logger"):
-        """Init."""
+    def __init__(
+        self,
+        filename=None,
+        file=None,
+        ast_tree=None,
+    ):
+        """Init data to load, based on filename / file or an ast_tree."""
         if filename:
             self.filename = filename
             self.load_from_filename(filename)
@@ -47,9 +54,6 @@ class PyDise(object):
         else:
             self.filename = None
             self.ast_module = None
-
-        self.on_error = on_error
-        self.side_effects = {"warnings": list(), "errors": list()}
 
     def load_from_filename(self, filename):
         """Load a file from a filename, and set an ast_module."""
@@ -66,6 +70,31 @@ class PyDise(object):
     def load_from_ast(self, ast_tree):
         """Load an ast module."""
         self.ast_module = ast_tree
+
+
+class PyDise(object):
+    """Main class."""
+
+    def __init__(
+        self,
+        filename=None,
+        file=None,
+        ast_tree=None,
+        patterns_ignored=None,
+        on_error="logger",
+    ):
+        """Init."""
+        pydise_loader_obj = PyDiseLoader(
+            filename=filename, file=file, ast_tree=ast_tree
+        )
+        self.filename = pydise_loader_obj.filename
+        self.ast_module = pydise_loader_obj.ast_module
+        self.on_error = on_error
+        self.patterns_ignored = copy.copy(PATTERNS_IGNORED)
+        if isinstance(patterns_ignored, list):
+            self.patterns_ignored.extend(patterns_ignored)
+
+        self.side_effects = {"warnings": list(), "errors": list()}
 
     def save_variables(self, ast_assign):
         """Save variables into a dictionnary."""
@@ -115,7 +144,10 @@ class PyDise(object):
             self._notify(side_effect, level=logging.ERROR, on_error=on_error)
 
     def analyze(self, ast_module=None):
-        """Analyze the AST Module and return a list of AST node that will be executed when imported."""
+        """Analyze the AST Module.
+
+        Return a dict with errors of the AST nodes that will be executed during import.
+        """
         if ast_module is None:
             ast_module = self.ast_module
         if not isinstance(ast_module, ast.Module):
@@ -139,7 +171,7 @@ class PyDise(object):
             raw_line = linecache.getline(
                 self.filename, node.lineno, module_globals=None
             )
-            for pattern_ignored in PATTERNS_IGNORED:
+            for pattern_ignored in self.patterns_ignored:
                 if pattern_ignored in raw_line:
                     return False
             return True
@@ -249,7 +281,7 @@ class PyDise(object):
         return self.side_effects
 
 
-def _get_filenames(args):
+def get_filenames(args):
     """Return a list of files based on args or by default, from the current directory."""
     list_files = list()
     if os.path.isdir(args.filename):
@@ -265,9 +297,11 @@ def _get_filenames(args):
     return list_files
 
 
-def main(filename, on_error="logger"):
+def main(filename, on_error="logger", pattern_ignored=None):
     """Script main entry point."""
-    pydise_object = PyDise(filename=filename, on_error=on_error)
+    pydise_object = PyDise(
+        filename=filename, on_error=on_error, patterns_ignored=pattern_ignored
+    )
 
     pydise_object.analyze()
     pydise_object.notify()
@@ -280,14 +314,22 @@ def run():
     parser = argparse.ArgumentParser()
     # parser.add_argument("--filename", help="file to check")
     parser.add_argument(
-        "filename", help="file to check", type=str, nargs="?", default="."
+        "filename", help="file to check (wildcard)", type=str, nargs="?", default="."
     )
     parser.add_argument(
-        "--list-only", help="list the detected files.", action="store_true"
+        "--list-only",
+        help="list the detected files without checking errors.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--pattern-ignored",
+        help="ignore line containing the pattern, multiple patterns can be setted, "
+        "the pattern is added to the default patterns.",
+        action="append",
     )
     args = parser.parse_args()
 
-    list_files = _get_filenames(args)
+    list_files = get_filenames(args)
 
     if args.list_only:
         print("Detected files : ")
@@ -296,7 +338,7 @@ def run():
         exit(0)
 
     for path in list_files:
-        main(filename=path)
+        main(filename=path, pattern_ignored=args.pattern_ignored)
 
 
 if __name__ == "__main__":
