@@ -26,6 +26,12 @@ jobs:
       uses: actions/setup-python@v3
       with:
         python-version: '3.9'
+    - name: Check tag env
+      env:
+        TAG_VERSION: ${{github.ref_name}}
+      run: |
+        echo $TAG_VERSION
+        echo ${{ github.ref_name }}
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
