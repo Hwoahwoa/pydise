@@ -215,7 +215,7 @@ class PyDise(object):
                     dest_call = dict_functions.get(tree_element.func.id)
                     if isinstance(dest_call, ast.ClassDef):
                         for body_data in dest_call.body:
-                            if body_data.name == "__init__":
+                            if hasattr(body_data, "name") and body_data.name == "__init__":
                                 self.get_side_effects(body_data, recursive=True)
                     else:
                         self.get_side_effects(dest_call, recursive=True)
