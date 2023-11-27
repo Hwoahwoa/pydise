@@ -24,6 +24,15 @@ class PydiseSideEffects(Exception):
         super().__init__(self.message)
 
 
+class PydiseLoadError(Exception):
+    """Pydise Exception."""
+
+    def __init__(self, message=""):
+        """Init exception message."""
+        self.message = message
+        super().__init__(self.message)
+
+
 class RewriteName(ast.NodeTransformer):
     """Class for Rewrite some nodes in an AST Tree."""
 
@@ -84,11 +93,14 @@ class PyDise(object):
         on_error="logger",
     ):
         """Init."""
-        pydise_loader_obj = PyDiseLoader(
-            filename=filename, file=file, ast_tree=ast_tree
-        )
-        self.filename = pydise_loader_obj.filename
-        self.ast_module = pydise_loader_obj.ast_module
+        try:
+            pydise_loader_obj = PyDiseLoader(
+                filename=filename, file=file, ast_tree=ast_tree
+            )
+            self.filename = pydise_loader_obj.filename
+            self.ast_module = pydise_loader_obj.ast_module
+        except SyntaxError:
+            raise PydiseLoadError
         self.on_error = on_error
         self.patterns_ignored = copy.copy(PATTERNS_IGNORED)
         if isinstance(patterns_ignored, list):
@@ -114,14 +126,10 @@ class PyDise(object):
 
     def _notify(self, tree_element, level=logging.ERROR, on_error=None):
         """Notifying assertion."""
-        message = f"{self.filename}:{tree_element.lineno} -> Side effects detected : "
-        try:
-            message += f"{tree_element.value.__dict__.get('func').id}"
-        except Exception:
-            try:
-                message += f"{list(ast.iter_child_nodes(tree_element))}"
-            except Exception:
-                message += f"{tree_element}"
+        raw_line = linecache.getline(
+            self.filename, tree_element.lineno, module_globals=None
+        )
+        message = f"{self.filename}:{tree_element.lineno} -> Side effects detected : {raw_line}"
 
         if on_error == "logger":
             logging.log(level, message)
@@ -215,7 +223,10 @@ class PyDise(object):
                     dest_call = dict_functions.get(tree_element.func.id)
                     if isinstance(dest_call, ast.ClassDef):
                         for body_data in dest_call.body:
-                            if hasattr(body_data, "name") and body_data.name == "__init__":
+                            if (
+                                hasattr(body_data, "name")
+                                and body_data.name == "__init__"
+                            ):
                                 self.get_side_effects(body_data, recursive=True)
                     else:
                         self.get_side_effects(dest_call, recursive=True)
@@ -299,14 +310,15 @@ def get_filenames(args):
 
 def main(filename, on_error="logger", pattern_ignored=None):
     """Script main entry point."""
-    pydise_object = PyDise(
-        filename=filename, on_error=on_error, patterns_ignored=pattern_ignored
-    )
-
-    pydise_object.analyze()
-    pydise_object.notify()
-
-    return pydise_object.side_effects
+    try:
+        pydise_object = PyDise(
+            filename=filename, on_error=on_error, patterns_ignored=pattern_ignored
+        )
+        pydise_object.analyze()
+        pydise_object.notify()
+        return pydise_object.side_effects
+    except PydiseLoadError:
+        print(f"!!! - {filename} -> unable to read the file (maybe python2 ?)")
 
 
 def run():
