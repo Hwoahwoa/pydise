@@ -349,8 +349,14 @@ def run():
             print(f"* {file}")
         exit(0)
 
+    list_file_side_effects = list()
     for path in list_files:
-        main(filename=path, pattern_ignored=args.pattern_ignored)
+        side_effects = main(
+            filename=path, on_error="logger", pattern_ignored=args.pattern_ignored
+        )
+        list_file_side_effects.extend(list(set(side_effects.get("errors", list()))))
+    if len(list_file_side_effects) > 0:
+        exit(1)
 
 
 if __name__ == "__main__":
